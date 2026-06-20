@@ -15,6 +15,10 @@ import { startRung } from "./app/ladder.js";
 import { choicesForAddSub, MISCONCEPTIONS } from "./app/distractors.js";
 import { findHaichiLessonForUnit } from "./data/haichiCourse.js";
 
+// つまづき記録などの簡易保存（ローカル。将来 store に差し替え可）
+const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch { return d; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+
 // 共有エンジンの genProblem で複数単元を出題（正負の計算＋文字式。答えはどれも数値）。
 const UNITS = [
   ...c1.units.filter((u) => ["u1", "u2", "u3", "u4", "u5"].includes(u.id)), // 正負：大小/加/減/乗除/四則
@@ -43,13 +47,16 @@ export default function App() {
   const [picked, setPicked] = useState(null);
   const [coach, setCoach] = useState(null); // つまづき診断の一言
   const [praise, setPraise] = useState(null);
-  const [solved, setSolved] = useState(0);
+  const [solved, setSolved] = useState(() => load("toketa_solved", 0));
   const [showExplain, setShowExplain] = useState(false); // 解説を開いているか
+  const [showVideo, setShowVideo] = useState(false);      // 解説の動画を埋め込み表示中か
+  const [stumbles, setStumbles] = useState(() => load("toketa_stumbles", {})); // つまづきタグ→回数
+  const [view, setView] = useState("play");               // play | map
 
   function next(nm = m, { sameUnitId = null, soloStart = false } = {}) {
     setProb(makeProblem(sameUnitId));
     setReveal(soloStart ? 0 : revealForRung(startRung(nm))); // 解説の後は「自力」から（ヒントなし）
-    setPicked(null); setCoach(null); setPraise(null); setShowExplain(false);
+    setPicked(null); setCoach(null); setPraise(null); setShowExplain(false); setShowVideo(false);
   }
 
   function choose(c) {
@@ -59,25 +66,67 @@ export default function App() {
       const helped = reveal > 0;                 // 助けを見て解いたか
       const nm = Math.min(1, m + (helped ? 0.04 : 0.12));
       setM(nm);
-      setSolved((s) => s + 1);
+      setSolved((s) => { const v = s + 1; save("toketa_solved", v); return v; });
       setPraise(helped ? "とけた！その調子！" : "自力でとけた！すごい！");
       setTimeout(() => next(nm), 1100);
     } else {
-      // つまづき → 原因を一言＋1段やさしく（ヒントを1つ多く見せる）
+      // つまづき → 原因を一言＋1段やさしく＋記録（つまづきマップ用）
       setCoach(c.tag ? MISCONCEPTIONS[c.tag]?.coach : "もう一度ためしてみよう");
+      if (c.tag) setStumbles((s) => { const v = { ...s, [c.tag]: (s[c.tag] || 0) + 1 }; save("toketa_stumbles", v); return v; });
       setReveal((v) => Math.min(2, v + 1));
       setTimeout(() => setPicked(null), 650);    // もう一度選べるように
     }
   }
 
   if (!prob) return <div style={S.app}><div style={S.wrap}>準備中…</div></div>;
+
+  // ── つまづきマップ画面 ──
+  if (view === "map") {
+    const entries = Object.entries(stumbles).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+    const maxN = entries.length ? entries[0][1] : 1;
+    return (
+      <div style={S.app}>
+        <div style={S.wrap}>
+          <div style={S.top}>
+            <span style={S.brand}>📊 つまづきマップ</span>
+            <button onClick={() => setView("play")} style={S.mapBtn}>← もどる</button>
+          </div>
+          <div style={{ fontSize: 13, color: "rgba(238,241,255,.72)", margin: "8px 0 16px", lineHeight: 1.7 }}>
+            とけた数 <b style={{ color: "#a5b4fc" }}>{solved}ｺ</b>。<br />つまづき＝のびしろ。よく出るところを練習すると、一気に伸びるよ！
+          </div>
+          {entries.length === 0 ? (
+            <div style={S.help}>
+              <div style={S.helpLine}>まだ つまづきの記録はないよ。</div>
+              <div style={S.helpLine}>問題を解くと、ここに「よく間違えるところ」が見えてくる！</div>
+            </div>
+          ) : (
+            entries.map(([tag, n]) => (
+              <div key={tag} style={S.mapRow}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                  <b style={{ fontSize: 15 }}>{MISCONCEPTIONS[tag]?.label || tag}</b>
+                  <span style={{ fontSize: 12, color: "rgba(238,241,255,.6)" }}>{n}回</span>
+                </div>
+                <div style={S.barTrack}><div style={{ ...S.barFill, width: `${Math.round((n / maxN) * 100)}%` }} /></div>
+                <div style={S.mapCoach}>💡 {MISCONCEPTIONS[tag]?.coach}</div>
+              </div>
+            ))
+          )}
+          <button onClick={() => setView("play")} style={{ ...S.tryBtn, marginTop: 18 }}>▶ 問題を解きにもどる</button>
+        </div>
+      </div>
+    );
+  }
+
   const rung = startRung(m);
   return (
     <div style={S.app}>
       <div style={S.wrap}>
         <div style={S.top}>
           <span style={S.brand}>とけた！</span>
-          <span style={S.meter}>とけた数 {solved}ｺ ・ いまの段：{["お手本", "穴うめ", "自力"][["example", "fill", "solo"].indexOf(rung)]}</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={S.meter}>とけた数 {solved}ｺ</span>
+            <button onClick={() => setView("map")} style={S.mapBtn}>📊 マップ</button>
+          </span>
         </div>
 
         <div style={S.unit}>{prob.unitEmoji} {prob.unitName}</div>
@@ -103,10 +152,28 @@ export default function App() {
               const hit = findHaichiLessonForUnit(prob.unitId);
               const yt = hit?.lesson?.yt;
               if (!yt) return null;
+              if (!showVideo) {
+                return (
+                  <button onClick={() => setShowVideo(true)} style={S.videoBtn}>
+                    ▶ 動画でもっとくわしく（葉一さん）<span style={S.videoSub}>{hit.lesson.t}</span>
+                  </button>
+                );
+              }
               return (
-                <button onClick={() => window.open(`https://www.youtube.com/watch?v=${yt}`, "_blank", "noopener")} style={S.videoBtn}>
-                  ▶ 動画でもっとくわしく（葉一さん）<span style={S.videoSub}>{hit.lesson.t}</span>
-                </button>
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ position: "relative", width: "100%", paddingBottom: "56.25%", borderRadius: 12, overflow: "hidden", background: "#000", border: "1px solid rgba(255,255,255,.15)" }}>
+                    <iframe
+                      title="解説動画"
+                      src={`https://www.youtube-nocookie.com/embed/${yt}?rel=0&modestbranding=1`}
+                      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                  </div>
+                  <div style={{ fontSize: 11, color: "rgba(186,230,253,.8)", marginTop: 6, textAlign: "center" }}>
+                    葉一さん「{hit.lesson.t}」 ・ <span onClick={() => window.open(`https://www.youtube.com/watch?v=${yt}`, "_blank", "noopener")} style={{ textDecoration: "underline", cursor: "pointer" }}>別タブで開く</span>
+                  </div>
+                </div>
               );
             })()}
             <button onClick={() => next(m, { sameUnitId: prob.unitId, soloStart: true })} style={S.tryBtn}>
@@ -188,4 +255,9 @@ const S = {
   tryBtn: { width: "100%", padding: "14px", borderRadius: 14, border: "2px solid rgba(255,255,255,.25)", background: "linear-gradient(135deg,#6366f1,#a855f7)", color: "#fff", fontSize: 16, fontWeight: 900, cursor: "pointer" },
   explainNote: { fontSize: 11.5, color: "rgba(186,230,253,.8)", marginTop: 8, textAlign: "center" },
   note: { fontSize: 11, color: "rgba(238,241,255,.45)", marginTop: 20 },
+  mapBtn: { padding: "7px 12px", borderRadius: 10, border: "1px solid rgba(165,180,252,.5)", background: "rgba(99,102,241,.18)", color: "#c7d2fe", fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" },
+  mapRow: { width: "100%", background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "12px 14px", marginBottom: 10 },
+  barTrack: { width: "100%", height: 10, borderRadius: 999, background: "rgba(255,255,255,.1)", overflow: "hidden" },
+  barFill: { height: "100%", borderRadius: 999, background: "linear-gradient(90deg,#fb923c,#f59e0b)" },
+  mapCoach: { fontSize: 12, color: "rgba(186,230,253,.85)", marginTop: 7, lineHeight: 1.6 },
 };
