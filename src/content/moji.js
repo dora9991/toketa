@@ -49,7 +49,8 @@ function genValue() {
 
 // 3. 同類項をまとめる
 function genLike() {
-  const a = ri(2, 7), b = ri(1, 6);
+  const a = ri(2, 7); let b = ri(1, 6);
+  if (a * b === a + b) b += 1; // 「かけた」誤答が正解と重ならないように（a=b=2 を回避）
   const ans = `${a + b}x`;
   return { q: `${a}x ＋ ${b}x ＝ ？`, ans,
     steps: ["同類項は、係数をたす", `${a}＋${b}＝${a + b}`],

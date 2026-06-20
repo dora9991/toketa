@@ -5,6 +5,7 @@ export const num = (n) => (n < 0 ? `−${-n}` : `${n}`);                 // 3 / 
 export const sp = (n) => (n < 0 ? `（−${-n}）` : `（＋${n}）`);          // （＋3）/（−3）
 export const spe = (n) => (n < 0 ? `−${-n}` : `＋${n}`);                // ＋3 / −3
 export const term = (k, v = "x") => (k === 1 ? v : k === -1 ? `−${v}` : `${k}${v}`); // x / −x / 3x
+export const pit = (n) => (n === 0 ? "0" : n === 1 ? "π" : `${n}π`); // 円・おうぎ形の Nπ 表記
 // 一次式 ax＋b を文字列に（全角＋−）
 export function lin(a, b) {
   const ax = a === 0 ? "" : term(a);
@@ -21,4 +22,8 @@ export function opts(ans, wrongs) {
     while (m.size < 4) { for (const v of [ans + d, ans - d]) { if (m.size < 4 && !m.has(v)) m.set(v, "calc"); } if (++d > 14) break; }
   }
   return shuffle([...m].map(([val, tag]) => ({ val, tag })));
+}
+// 「Nπ」の4択：係数(数値)で重複なし4つを作ってから Nπ 表記に変換（数値padが効く）
+export function optsPi(coef, wrongs) {
+  return opts(coef, wrongs).map((o) => ({ val: pit(o.val), tag: o.tag }));
 }
