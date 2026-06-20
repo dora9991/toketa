@@ -15,6 +15,19 @@ const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } cat
 
 const revealForRung = (r, n) => (r === "example" ? n : r === "fill" ? 1 : 0);
 const makeProblem = (chap, i) => ({ ...chap.units[i].gen(), unit: chap.units[i] });
+// 正解エフェクト用の紙吹雪（固定配置・色）
+const CONFETTI = Array.from({ length: 22 }, (_, i) => ({
+  x: (i * 37 + 5) % 100, c: ["#fde047", "#f472b6", "#34d399", "#60a5fa", "#f59e0b", "#a78bfa"][i % 6],
+  delay: (i % 7) * 0.04, dur: 0.95 + (i % 5) * 0.15, w: i % 3 ? 9 : 12, round: i % 2 === 0,
+}));
+const FX_CSS = `
+@keyframes fxPop { 0%{transform:translate(-50%,-50%) scale(.2);opacity:0} 45%{transform:translate(-50%,-50%) scale(1.3);opacity:1} 70%{transform:translate(-50%,-50%) scale(.92)} 100%{transform:translate(-50%,-50%) scale(1.08);opacity:1} }
+@keyframes fxRing { 0%{transform:translate(-50%,-50%) scale(.3);opacity:.85} 100%{transform:translate(-50%,-50%) scale(2.6);opacity:0} }
+@keyframes fxFlash { 0%{opacity:.55} 100%{opacity:0} }
+@keyframes fxFall { 0%{transform:translateY(-12vh) rotate(0);opacity:1} 100%{transform:translateY(112vh) rotate(720deg);opacity:.15} }
+@keyframes okPulse { 0%{transform:scale(1)} 35%{transform:scale(1.16)} 100%{transform:scale(1)} }
+@keyframes bannerPop { 0%{transform:scale(.6);opacity:0} 55%{transform:scale(1.1)} 100%{transform:scale(1);opacity:1} }`;
+
 // 次に出す単元：先頭の未クリア単元へ。全部クリアならランダム（復習）。
 function pickNextIdx(chap, solvedBy) {
   const first = chap.units.findIndex((u) => (solvedBy[u.id] || 0) < u.need);
@@ -40,6 +53,7 @@ export default function App() {
   const [homeGrade, setHomeGrade] = useState(() => load("toketa_grade", 1));
   const [reviewing, setReviewing] = useState(false); // ふくしゅうモード中か
   const [chapterClear, setChapterClear] = useState(null); // 章クリアのご褒美演出 { name, emoji }
+  const [fxKey, setFxKey] = useState(0); // 正解エフェクトの再生キー（増やすとアニメ再生）
 
   function resetTurn() { setPicked(null); setCoach(null); setPraise(null); setShowExplain(false); setShowVideo(false); }
   function loadNext(c, nextIdx, { soloStart = false } = {}) {
@@ -73,6 +87,7 @@ export default function App() {
     const u = prob.unit;
     if (cv.val === prob.ans) {
       const self = reveal === 0;
+      setFxKey((k) => k + 1); // 正解エフェクト発火
       const nm = Math.min(1, (mBy[u.id] || 0) + (self ? 0.12 : 0.04));
       const nMBy = { ...mBy, [u.id]: nm }; setMBy(nMBy); save("toketa_m", nMBy);
       const prev = solvedBy[u.id] || 0;
@@ -200,6 +215,19 @@ export default function App() {
   const cleared = (solvedBy[u.id] || 0) >= u.need;
   return (
     <div style={S.app}><div style={S.wrap}>
+      <style>{FX_CSS}</style>
+      {/* 正解の大きなエフェクト（紙吹雪＋光のリング＋ポップ） */}
+      {praise && (
+        <div key={fxKey} style={{ position: "fixed", inset: 0, zIndex: 60, pointerEvents: "none", overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0, background: "radial-gradient(circle at 50% 40%, rgba(74,222,128,.4), transparent 62%)", animation: "fxFlash .55s ease-out forwards" }} />
+          <div style={{ position: "absolute", left: "50%", top: "40%", width: 150, height: 150, border: "7px solid #4ade80", borderRadius: "50%", animation: "fxRing .7s ease-out forwards" }} />
+          <div style={{ position: "absolute", left: "50%", top: "40%", width: 150, height: 150, border: "4px solid #a5f3fc", borderRadius: "50%", animation: "fxRing .7s ease-out .12s forwards" }} />
+          <div style={{ position: "absolute", left: "50%", top: "40%", fontSize: 92, filter: "drop-shadow(0 4px 16px rgba(0,0,0,.5))", animation: "fxPop .6s cubic-bezier(.2,1.6,.4,1) both" }}>🎉</div>
+          {CONFETTI.map((p, i) => (
+            <div key={i} style={{ position: "absolute", left: p.x + "%", top: 0, width: p.w, height: p.w + 4, background: p.c, borderRadius: p.round ? "50%" : 2, animation: `fxFall ${p.dur}s ease-in ${p.delay}s forwards` }} />
+          ))}
+        </div>
+      )}
       <div style={S.top}>
         <button onClick={() => { setProb(null); setReviewing(false); setView("home"); }} style={S.mapBtn}>← もどる</button>
         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -270,12 +298,12 @@ export default function App() {
               const ng = isPicked && c.val !== prob.ans;
               return (
                 <button key={i} onClick={() => choose(c)} disabled={!!praise}
-                  style={{ ...S.choice, ...(ok ? S.ok : ng ? S.ng : {}) }}>{c.val}</button>
+                  style={{ ...S.choice, ...(ok ? { ...S.ok, animation: "okPulse .5s ease both" } : ng ? S.ng : {}) }}>{c.val}</button>
               );
             })}
           </div>
           {coach && !praise && <div style={S.coach}>🧭 {coach}</div>}
-          {praise && <div style={S.praise}>{praise}</div>}
+          {praise && <div style={{ ...S.praise, fontSize: 20, animation: "bannerPop .45s cubic-bezier(.2,1.6,.4,1) both" }}>{praise}</div>}
           {!praise && (
             <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap", justifyContent: "center" }}>
               {reveal < prob.steps.length && (
