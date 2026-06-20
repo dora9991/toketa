@@ -6,7 +6,7 @@
 //  ・つまづきマップ：誤答の診断タグを記録して弱点を可視化。
 // ============================================================
 import { useState } from "react";
-import { CHAPTERS, MISC } from "./content/index.js";
+import { CHAPTERS, GRADES, MISC } from "./content/index.js";
 import { startRung } from "./app/ladder.js";
 import { findHaichiLessonForUnit } from "./data/haichiCourse.js";
 
@@ -36,15 +36,31 @@ export default function App() {
   const [showVideo, setShowVideo] = useState(false);
   const [stumbles, setStumbles] = useState(() => load("toketa_stumbles", {}));
   const [view, setView] = useState("home");
+  const [homeGrade, setHomeGrade] = useState(() => load("toketa_grade", 1));
+  const [reviewing, setReviewing] = useState(false); // ふくしゅうモード中か
 
+  function resetTurn() { setPicked(null); setCoach(null); setPraise(null); setShowExplain(false); setShowVideo(false); }
   function loadNext(c, nextIdx, { soloStart = false } = {}) {
     const unit = c.units[nextIdx];
     const p = makeProblem(c, nextIdx);
     setChap(c); setIdx(nextIdx); setProb(p);
     setReveal(soloStart ? 0 : revealForRung(startRung(mBy[unit.id] || 0), p.steps.length));
-    setPicked(null); setCoach(null); setPraise(null); setShowExplain(false); setShowVideo(false);
+    resetTurn();
   }
-  function enterChapter(c) { loadNext(c, pickNextIdx(c, solvedBy)); setView("play"); }
+  function enterChapter(c) { setReviewing(false); loadNext(c, pickNextIdx(c, solvedBy)); setView("play"); }
+
+  // ── ふくしゅう（これまで練習した単元から、章をまたいでまぜて出す） ──
+  function reviewPool() { return CHAPTERS.flatMap((c) => c.units).filter((u) => (solvedBy[u.id] || 0) > 0); }
+  function loadReviewNext() {
+    const pool = reviewPool();
+    if (pool.length === 0) { setView("home"); return; }
+    const unit = pool[Math.floor(Math.random() * pool.length)];
+    const p = { ...unit.gen(), unit };
+    setProb(p);
+    setReveal(revealForRung(startRung(mBy[unit.id] || 0), p.steps.length));
+    resetTurn();
+  }
+  function startReview() { setReviewing(true); setChap(null); loadReviewNext(); setView("play"); }
 
   function choose(cv) {
     if (picked || praise) return;
@@ -58,6 +74,11 @@ export default function App() {
       const nSolvedBy = { ...solvedBy, [u.id]: prev + 1 };
       setSolvedBy(nSolvedBy); save("toketa_solvedBy", nSolvedBy);
       setSolved((s) => { const v = s + 1; save("toketa_solved", v); return v; });
+      if (reviewing) {
+        setPraise(self ? "自力でとけた！すごい！" : "とけた！その調子！");
+        setTimeout(loadReviewNext, 1050);
+        return;
+      }
       const justCleared = prev < u.need && prev + 1 >= u.need;
       const chapDone = chap.units.every((x) => (nSolvedBy[x.id] || 0) >= x.need);
       if (justCleared && chapDone) {
@@ -116,15 +137,23 @@ export default function App() {
             <button onClick={() => setView("map")} style={S.mapBtn}>📊 マップ</button>
           </span>
         </div>
-        <div style={{ fontSize: 14, fontWeight: 800, color: "rgba(238,241,255,.8)", margin: "8px 0 16px" }}>どの章を学ぶ？</div>
-        {CHAPTERS.map((c) => {
+        <div style={{ fontSize: 14, fontWeight: 800, color: "rgba(238,241,255,.8)", margin: "8px 0 12px" }}>どの章を学ぶ？</div>
+        <div style={{ display: "flex", gap: 8, width: "100%", marginBottom: 14 }}>
+          {GRADES.map((g) => (
+            <button key={g} onClick={() => { setHomeGrade(g); save("toketa_grade", g); }}
+              style={{ flex: 1, padding: "9px 0", borderRadius: 12, cursor: "pointer", fontSize: 14, fontWeight: 900,
+                border: homeGrade === g ? "2px solid #818cf8" : "1px solid rgba(255,255,255,.18)",
+                background: homeGrade === g ? "rgba(129,140,248,.25)" : "rgba(255,255,255,.05)", color: "#fff" }}>中{g}</button>
+          ))}
+        </div>
+        {CHAPTERS.filter((c) => c.grade === homeGrade).map((c) => {
           const cleared = c.units.filter((u) => (solvedBy[u.id] || 0) >= u.need).length;
           const done = cleared === c.units.length;
           return (
             <button key={c.id} onClick={() => enterChapter(c)} style={{ ...S.chapCard, borderColor: done ? "rgba(74,222,128,.6)" : "rgba(255,255,255,.15)" }}>
-              <span style={{ fontSize: 34, lineHeight: 1 }}>{c.emoji}</span>
+              <span style={{ fontSize: 32, lineHeight: 1 }}>{c.emoji}</span>
               <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 17, fontWeight: 900, display: "block" }}>{c.name}</span>
+                <span style={{ fontSize: 16, fontWeight: 900, display: "block" }}>{c.name}</span>
                 <span style={{ fontSize: 12, color: done ? "#86efac" : "rgba(238,241,255,.6)" }}>{cleared}/{c.units.length} 単元{done ? " クリア ✓" : ""}</span>
                 <span style={{ display: "block", marginTop: 6, height: 6, borderRadius: 999, background: "rgba(255,255,255,.1)", overflow: "hidden" }}>
                   <span style={{ display: "block", height: "100%", width: `${Math.round(cleared / c.units.length * 100)}%`, background: "linear-gradient(90deg,#818cf8,#22d3ee)" }} />
@@ -134,6 +163,12 @@ export default function App() {
             </button>
           );
         })}
+        {reviewPool().length > 0 && (
+          <button onClick={startReview} style={{ width: "100%", marginTop: 6, padding: "14px", borderRadius: 14, cursor: "pointer",
+            border: "2px solid rgba(255,255,255,.2)", background: "linear-gradient(135deg,#f59e0b,#ef4444)", color: "#fff", fontSize: 15, fontWeight: 900 }}>
+            🔁 ふくしゅう（学んだ問題をまぜて出題）
+          </button>
+        )}
         <div style={S.note}>まちがえても大丈夫。最後は自分で解けるよ。</div>
       </div></div>
     );
@@ -145,20 +180,26 @@ export default function App() {
   return (
     <div style={S.app}><div style={S.wrap}>
       <div style={S.top}>
-        <button onClick={() => { setProb(null); setView("home"); }} style={S.mapBtn}>← 章</button>
+        <button onClick={() => { setProb(null); setReviewing(false); setView("home"); }} style={S.mapBtn}>← もどる</button>
         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={S.meter}>とけた数 {solved}ｺ</span>
           <button onClick={() => setView("map")} style={S.mapBtn}>📊 マップ</button>
         </span>
       </div>
 
-      <div style={S.unit}>
-        {chap.emoji} {chap.name}　{idx + 1}/{chap.units.length}：{u.emoji} {u.name}
-        <span style={{ color: cleared ? "#4ade80" : "rgba(255,255,255,.5)", marginLeft: 8, fontWeight: 800 }}>
-          {cleared ? "クリア済み ✓" : `${Math.min(solvedBy[u.id] || 0, u.need)}/${u.need}`}
-        </span>
-      </div>
-      <div style={S.barTrackSlim}><div style={{ ...S.barFillBlue, width: `${Math.round(Math.min(solvedBy[u.id] || 0, u.need) / u.need * 100)}%` }} /></div>
+      {reviewing ? (
+        <div style={S.unit}>🔁 ふくしゅう　・　{u.emoji} {u.name}</div>
+      ) : (
+        <>
+          <div style={S.unit}>
+            中{chap.grade}　{chap.emoji} {chap.name}　{idx + 1}/{chap.units.length}：{u.name}
+            <span style={{ color: cleared ? "#4ade80" : "rgba(255,255,255,.5)", marginLeft: 8, fontWeight: 800 }}>
+              {cleared ? "クリア済み ✓" : `${Math.min(solvedBy[u.id] || 0, u.need)}/${u.need}`}
+            </span>
+          </div>
+          <div style={S.barTrackSlim}><div style={{ ...S.barFillBlue, width: `${Math.round(Math.min(solvedBy[u.id] || 0, u.need) / u.need * 100)}%` }} /></div>
+        </>
+      )}
 
       <div style={S.q}>{prob.q}</div>
 
@@ -196,7 +237,7 @@ export default function App() {
               </div>
             );
           })()}
-          <button onClick={() => loadNext(chap, idx, { soloStart: true })} style={S.tryBtn}>📝 わかった！もう一度やってみる</button>
+          <button onClick={() => { if (reviewing) { const p = { ...u.gen(), unit: u }; setProb(p); setReveal(0); resetTurn(); } else loadNext(chap, idx, { soloStart: true }); }} style={S.tryBtn}>📝 わかった！もう一度やってみる</button>
           <div style={S.explainNote}>※ 同じタイプの問題が出るよ。今度は自分でとこう！</div>
         </div>
       ) : (
