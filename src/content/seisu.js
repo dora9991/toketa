@@ -137,6 +137,7 @@ function genShisoku() {
 export const CHAPTER = {
   id: "seisu",
   name: "正の数・負の数",
+  emoji: "🔢",
   units: [
     { id: "daisho", name: "大小・絶対値", emoji: "📏", haichiUnit: "u1", need: 4, gen: genDaisho },
     { id: "kahou", name: "加法（たし算）", emoji: "➕", haichiUnit: "u2", need: 5, gen: genKahou },

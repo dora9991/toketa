@@ -1,73 +1,76 @@
 // ============================================================
-// App.jsx — 「とけた！」コア体験ループ（正の数・負の数 1章をしっかり）。
-//  ・小単元を学習順にクリアして進む（大小→加法→減法→乗除→四則）。全部クリアで復習モード。
-//  ・各問題は本物の解き方ステップ(steps)と、演算ごとの正確な誤答診断(distractors)を持つ。
-//  ・助けのはしご：習熟度で開始段（お手本→穴うめ→自力）。つまづくと1段やさしく。
-//    ヒント → まだ分からない → 解説(手順＋答え＋葉一さんの動画埋め込み) → 同じ型を自力で。
-//  ・つまづきマップ：誤答の診断タグを記録して、弱点を可視化。
+// App.jsx — 「とけた！」コア体験ループ（正負・文字式・方程式の3章）。
+//  ・章えらび(home) → その章の小単元を学習順にクリアして進む(play)。
+//  ・各問題は本物の解き方ステップ(steps)＋演算/単元ごとの誤答診断(distractors)。
+//  ・助けのはしご：習熟度で開始段。ヒント → 解説(手順＋答え＋葉一さんの動画) → 自力で。
+//  ・つまづきマップ：誤答の診断タグを記録して弱点を可視化。
 // ============================================================
 import { useState } from "react";
-import { CHAPTER, MISC } from "./content/seisu.js";
+import { CHAPTERS, MISC } from "./content/index.js";
 import { startRung } from "./app/ladder.js";
 import { findHaichiLessonForUnit } from "./data/haichiCourse.js";
 
 const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
-const UNITS = CHAPTER.units;
 
 const revealForRung = (r, n) => (r === "example" ? n : r === "fill" ? 1 : 0);
-function makeProblem(i) { const unit = UNITS[i]; return { ...unit.gen(), unit }; }
+const makeProblem = (chap, i) => ({ ...chap.units[i].gen(), unit: chap.units[i] });
 // 次に出す単元：先頭の未クリア単元へ。全部クリアならランダム（復習）。
-function pickNextIdx(solvedBy) {
-  const first = UNITS.findIndex((u) => (solvedBy[u.id] || 0) < u.need);
-  return first >= 0 ? first : Math.floor(Math.random() * UNITS.length);
+function pickNextIdx(chap, solvedBy) {
+  const first = chap.units.findIndex((u) => (solvedBy[u.id] || 0) < u.need);
+  return first >= 0 ? first : Math.floor(Math.random() * chap.units.length);
 }
 
 export default function App() {
-  const [idx, setIdx] = useState(() => Math.min(load("toketa_idx", 0), UNITS.length - 1));
-  const [prob, setProb] = useState(() => makeProblem(Math.min(load("toketa_idx", 0), UNITS.length - 1)));
+  const [chap, setChap] = useState(null);
+  const [idx, setIdx] = useState(0);
+  const [prob, setProb] = useState(null);
   const [mBy, setMBy] = useState(() => load("toketa_m", {}));
   const [solvedBy, setSolvedBy] = useState(() => load("toketa_solvedBy", {}));
   const [solved, setSolved] = useState(() => load("toketa_solved", 0));
-  const [reveal, setReveal] = useState(() => revealForRung(startRung(load("toketa_m", {})[UNITS[0].id] || 0), 2));
+  const [reveal, setReveal] = useState(0);
   const [picked, setPicked] = useState(null);
   const [coach, setCoach] = useState(null);
   const [praise, setPraise] = useState(null);
   const [showExplain, setShowExplain] = useState(false);
   const [showVideo, setShowVideo] = useState(false);
   const [stumbles, setStumbles] = useState(() => load("toketa_stumbles", {}));
-  const [view, setView] = useState("play");
+  const [view, setView] = useState("home");
 
-  function loadNext(nextIdx = idx, { soloStart = false } = {}) {
-    const unit = UNITS[nextIdx];
-    const p = makeProblem(nextIdx);
-    setIdx(nextIdx); save("toketa_idx", nextIdx);
-    setProb(p);
+  function loadNext(c, nextIdx, { soloStart = false } = {}) {
+    const unit = c.units[nextIdx];
+    const p = makeProblem(c, nextIdx);
+    setChap(c); setIdx(nextIdx); setProb(p);
     setReveal(soloStart ? 0 : revealForRung(startRung(mBy[unit.id] || 0), p.steps.length));
     setPicked(null); setCoach(null); setPraise(null); setShowExplain(false); setShowVideo(false);
   }
+  function enterChapter(c) { loadNext(c, pickNextIdx(c, solvedBy)); setView("play"); }
 
-  function choose(c) {
+  function choose(cv) {
     if (picked || praise) return;
-    setPicked(c);
+    setPicked(cv);
     const u = prob.unit;
-    if (c.val === prob.ans) {
+    if (cv.val === prob.ans) {
       const self = reveal === 0;
       const nm = Math.min(1, (mBy[u.id] || 0) + (self ? 0.12 : 0.04));
       const nMBy = { ...mBy, [u.id]: nm }; setMBy(nMBy); save("toketa_m", nMBy);
       const prev = solvedBy[u.id] || 0;
-      const nSolvedBy = { ...solvedBy, [u.id]: prev + 1 }; // 正解はすべて単元の進み具合に数える
+      const nSolvedBy = { ...solvedBy, [u.id]: prev + 1 };
       setSolvedBy(nSolvedBy); save("toketa_solvedBy", nSolvedBy);
       setSolved((s) => { const v = s + 1; save("toketa_solved", v); return v; });
-
       const justCleared = prev < u.need && prev + 1 >= u.need;
-      const allClear = UNITS.every((x) => (nSolvedBy[x.id] || 0) >= x.need);
-      setPraise(justCleared ? (allClear ? "🎉 正負ぜんぶクリア！すごい！" : `🎉 ${u.name} クリア！つぎへ！`) : (self ? "自力でとけた！すごい！" : "とけた！その調子！"));
-      const nextIdx = pickNextIdx(nSolvedBy);
-      setTimeout(() => loadNext(nextIdx), justCleared ? 1600 : 1050);
+      const chapDone = chap.units.every((x) => (nSolvedBy[x.id] || 0) >= x.need);
+      if (justCleared && chapDone) {
+        setPraise(`🎉 ${chap.name} ぜんぶクリア！すごい！`);
+        setTimeout(() => { setProb(null); setView("home"); }, 1800);
+      } else {
+        setPraise(justCleared ? `🎉 ${u.name} クリア！つぎへ！` : (self ? "自力でとけた！すごい！" : "とけた！その調子！"));
+        const ni = pickNextIdx(chap, nSolvedBy);
+        setTimeout(() => loadNext(chap, ni), justCleared ? 1500 : 1050);
+      }
     } else {
-      setCoach(c.tag ? MISC[c.tag]?.coach : "もう一度ためしてみよう");
-      if (c.tag) setStumbles((s) => { const v = { ...s, [c.tag]: (s[c.tag] || 0) + 1 }; save("toketa_stumbles", v); return v; });
+      setCoach(cv.tag ? MISC[cv.tag]?.coach : "もう一度ためしてみよう");
+      if (cv.tag) setStumbles((s) => { const v = { ...s, [cv.tag]: (s[cv.tag] || 0) + 1 }; save("toketa_stumbles", v); return v; });
       setReveal((v) => Math.min(prob.steps.length, v + 1));
       setTimeout(() => setPicked(null), 650);
     }
@@ -81,7 +84,7 @@ export default function App() {
       <div style={S.app}><div style={S.wrap}>
         <div style={S.top}>
           <span style={S.brand}>📊 つまづきマップ</span>
-          <button onClick={() => setView("play")} style={S.mapBtn}>← もどる</button>
+          <button onClick={() => setView(prob ? "play" : "home")} style={S.mapBtn}>← もどる</button>
         </div>
         <div style={{ fontSize: 13, color: "rgba(238,241,255,.72)", margin: "8px 0 16px", lineHeight: 1.7 }}>
           とけた数 <b style={{ color: "#a5b4fc" }}>{solved}ｺ</b>。<br />つまづき＝のびしろ。よく出るところを練習すると、一気に伸びるよ！
@@ -98,17 +101,14 @@ export default function App() {
             <div style={S.mapCoach}>💡 {MISC[tag]?.coach}</div>
           </div>
         ))}
-        <button onClick={() => setView("play")} style={{ ...S.tryBtn, marginTop: 18 }}>▶ 問題を解きにもどる</button>
       </div></div>
     );
   }
 
-  if (!prob) return <div style={S.app}><div style={S.wrap}>準備中…</div></div>;
-  const u = prob.unit;
-  const cleared = (solvedBy[u.id] || 0) >= u.need;
-  return (
-    <div style={S.app}>
-      <div style={S.wrap}>
+  // ── 章えらび（ホーム） ──
+  if (view === "home" || !prob) {
+    return (
+      <div style={S.app}><div style={S.wrap}>
         <div style={S.top}>
           <span style={S.brand}>とけた！</span>
           <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -116,89 +116,119 @@ export default function App() {
             <button onClick={() => setView("map")} style={S.mapBtn}>📊 マップ</button>
           </span>
         </div>
-
-        {/* 章の進み具合 */}
-        <div style={S.unit}>
-          {CHAPTER.name}　{idx + 1}/{UNITS.length}：{u.emoji} {u.name}
-          <span style={{ color: cleared ? "#4ade80" : "rgba(255,255,255,.5)", marginLeft: 8, fontWeight: 800 }}>
-            {cleared ? "クリア済み ✓" : `${Math.min(solvedBy[u.id] || 0, u.need)}/${u.need}`}
-          </span>
-        </div>
-        <div style={S.barTrackSlim}><div style={{ ...S.barFillBlue, width: `${Math.round(Math.min(solvedBy[u.id] || 0, u.need) / u.need * 100)}%` }} /></div>
-
-        <div style={S.q}>{prob.q}</div>
-
-        {/* ヒント：解き方ステップを段階表示 */}
-        {reveal > 0 && (
-          <div style={S.help}>
-            <div style={S.helpTtl}>💡 ヒント</div>
-            {prob.steps.slice(0, reveal).map((s, i) => <div key={i} style={S.helpLine}>{s}</div>)}
-          </div>
-        )}
-
-        {showExplain ? (
-          <div style={S.explain}>
-            <div style={S.explainTtl}>📖 かいせつ</div>
-            {prob.steps.map((s, i) => <div key={i} style={S.explainStep}>{i + 1}. {s}</div>)}
-            <div style={S.explainAns}>こたえ： <b>{prob.ans}</b></div>
-            {(() => {
-              const hit = findHaichiLessonForUnit(u.haichiUnit);
-              const yt = hit?.lesson?.yt;
-              if (!yt) return null;
-              if (!showVideo) return (
-                <button onClick={() => setShowVideo(true)} style={S.videoBtn}>
-                  ▶ 動画でもっとくわしく（葉一さん）<span style={S.videoSub}>{hit.lesson.t}</span>
-                </button>
-              );
-              return (
-                <div style={{ marginBottom: 10 }}>
-                  <div style={{ position: "relative", width: "100%", paddingBottom: "56.25%", borderRadius: 12, overflow: "hidden", background: "#000", border: "1px solid rgba(255,255,255,.15)" }}>
-                    <iframe title="解説動画" src={`https://www.youtube-nocookie.com/embed/${yt}?rel=0&modestbranding=1`}
-                      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
-                  </div>
-                  <div style={{ fontSize: 11, color: "rgba(186,230,253,.8)", marginTop: 6, textAlign: "center" }}>
-                    葉一さん「{hit.lesson.t}」 ・ <span onClick={() => window.open(`https://www.youtube.com/watch?v=${yt}`, "_blank", "noopener")} style={{ textDecoration: "underline", cursor: "pointer" }}>別タブで開く</span>
-                  </div>
-                </div>
-              );
-            })()}
-            <button onClick={() => loadNext(idx, { soloStart: true })} style={S.tryBtn}>📝 わかった！もう一度やってみる</button>
-            <div style={S.explainNote}>※ 同じタイプの問題が出るよ。今度は自分でとこう！</div>
-          </div>
-        ) : (
-          <>
-            <div style={S.grid}>
-              {prob.distractors.map((c, i) => {
-                const isPicked = picked && picked.val === c.val;
-                const ok = isPicked && c.val === prob.ans;
-                const ng = isPicked && c.val !== prob.ans;
-                return (
-                  <button key={i} onClick={() => choose(c)} disabled={!!praise}
-                    style={{ ...S.choice, ...(ok ? S.ok : ng ? S.ng : {}) }}>{c.val}</button>
-                );
-              })}
-            </div>
-
-            {coach && !praise && <div style={S.coach}>🧭 {coach}</div>}
-            {praise && <div style={S.praise}>{praise}</div>}
-
-            {!praise && (
-              <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap", justifyContent: "center" }}>
-                {reveal < prob.steps.length && (
-                  <button onClick={() => setReveal((v) => Math.min(prob.steps.length, v + 1))} style={S.hintBtn}>💡 ヒントがほしい</button>
-                )}
-                {reveal >= 1 && (
-                  <button onClick={() => setShowExplain(true)} style={S.explainBtn}>📖 まだわからない…解説を見る</button>
-                )}
-              </div>
-            )}
-          </>
-        )}
-
+        <div style={{ fontSize: 14, fontWeight: 800, color: "rgba(238,241,255,.8)", margin: "8px 0 16px" }}>どの章を学ぶ？</div>
+        {CHAPTERS.map((c) => {
+          const cleared = c.units.filter((u) => (solvedBy[u.id] || 0) >= u.need).length;
+          const done = cleared === c.units.length;
+          return (
+            <button key={c.id} onClick={() => enterChapter(c)} style={{ ...S.chapCard, borderColor: done ? "rgba(74,222,128,.6)" : "rgba(255,255,255,.15)" }}>
+              <span style={{ fontSize: 34, lineHeight: 1 }}>{c.emoji}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 17, fontWeight: 900, display: "block" }}>{c.name}</span>
+                <span style={{ fontSize: 12, color: done ? "#86efac" : "rgba(238,241,255,.6)" }}>{cleared}/{c.units.length} 単元{done ? " クリア ✓" : ""}</span>
+                <span style={{ display: "block", marginTop: 6, height: 6, borderRadius: 999, background: "rgba(255,255,255,.1)", overflow: "hidden" }}>
+                  <span style={{ display: "block", height: "100%", width: `${Math.round(cleared / c.units.length * 100)}%`, background: "linear-gradient(90deg,#818cf8,#22d3ee)" }} />
+                </span>
+              </span>
+              <span style={{ fontSize: 18, color: "rgba(255,255,255,.5)" }}>›</span>
+            </button>
+          );
+        })}
         <div style={S.note}>まちがえても大丈夫。最後は自分で解けるよ。</div>
+      </div></div>
+    );
+  }
+
+  // ── 出題（プレイ） ──
+  const u = prob.unit;
+  const cleared = (solvedBy[u.id] || 0) >= u.need;
+  return (
+    <div style={S.app}><div style={S.wrap}>
+      <div style={S.top}>
+        <button onClick={() => { setProb(null); setView("home"); }} style={S.mapBtn}>← 章</button>
+        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={S.meter}>とけた数 {solved}ｺ</span>
+          <button onClick={() => setView("map")} style={S.mapBtn}>📊 マップ</button>
+        </span>
       </div>
-    </div>
+
+      <div style={S.unit}>
+        {chap.emoji} {chap.name}　{idx + 1}/{chap.units.length}：{u.emoji} {u.name}
+        <span style={{ color: cleared ? "#4ade80" : "rgba(255,255,255,.5)", marginLeft: 8, fontWeight: 800 }}>
+          {cleared ? "クリア済み ✓" : `${Math.min(solvedBy[u.id] || 0, u.need)}/${u.need}`}
+        </span>
+      </div>
+      <div style={S.barTrackSlim}><div style={{ ...S.barFillBlue, width: `${Math.round(Math.min(solvedBy[u.id] || 0, u.need) / u.need * 100)}%` }} /></div>
+
+      <div style={S.q}>{prob.q}</div>
+
+      {reveal > 0 && (
+        <div style={S.help}>
+          <div style={S.helpTtl}>💡 ヒント</div>
+          {prob.steps.slice(0, reveal).map((s, i) => <div key={i} style={S.helpLine}>{s}</div>)}
+        </div>
+      )}
+
+      {showExplain ? (
+        <div style={S.explain}>
+          <div style={S.explainTtl}>📖 かいせつ</div>
+          {prob.steps.map((s, i) => <div key={i} style={S.explainStep}>{i + 1}. {s}</div>)}
+          <div style={S.explainAns}>こたえ： <b>{prob.ans}</b></div>
+          {(() => {
+            const hit = findHaichiLessonForUnit(u.haichiUnit);
+            const yt = hit?.lesson?.yt;
+            if (!yt) return null;
+            if (!showVideo) return (
+              <button onClick={() => setShowVideo(true)} style={S.videoBtn}>
+                ▶ 動画でもっとくわしく（葉一さん）<span style={S.videoSub}>{hit.lesson.t}</span>
+              </button>
+            );
+            return (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ position: "relative", width: "100%", paddingBottom: "56.25%", borderRadius: 12, overflow: "hidden", background: "#000", border: "1px solid rgba(255,255,255,.15)" }}>
+                  <iframe title="解説動画" src={`https://www.youtube-nocookie.com/embed/${yt}?rel=0&modestbranding=1`}
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
+                </div>
+                <div style={{ fontSize: 11, color: "rgba(186,230,253,.8)", marginTop: 6, textAlign: "center" }}>
+                  葉一さん「{hit.lesson.t}」 ・ <span onClick={() => window.open(`https://www.youtube.com/watch?v=${yt}`, "_blank", "noopener")} style={{ textDecoration: "underline", cursor: "pointer" }}>別タブで開く</span>
+                </div>
+              </div>
+            );
+          })()}
+          <button onClick={() => loadNext(chap, idx, { soloStart: true })} style={S.tryBtn}>📝 わかった！もう一度やってみる</button>
+          <div style={S.explainNote}>※ 同じタイプの問題が出るよ。今度は自分でとこう！</div>
+        </div>
+      ) : (
+        <>
+          <div style={S.grid}>
+            {prob.distractors.map((c, i) => {
+              const isPicked = picked && picked.val === c.val;
+              const ok = isPicked && c.val === prob.ans;
+              const ng = isPicked && c.val !== prob.ans;
+              return (
+                <button key={i} onClick={() => choose(c)} disabled={!!praise}
+                  style={{ ...S.choice, ...(ok ? S.ok : ng ? S.ng : {}) }}>{c.val}</button>
+              );
+            })}
+          </div>
+          {coach && !praise && <div style={S.coach}>🧭 {coach}</div>}
+          {praise && <div style={S.praise}>{praise}</div>}
+          {!praise && (
+            <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap", justifyContent: "center" }}>
+              {reveal < prob.steps.length && (
+                <button onClick={() => setReveal((v) => Math.min(prob.steps.length, v + 1))} style={S.hintBtn}>💡 ヒントがほしい</button>
+              )}
+              {reveal >= 1 && (
+                <button onClick={() => setShowExplain(true)} style={S.explainBtn}>📖 まだわからない…解説を見る</button>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      <div style={S.note}>まちがえても大丈夫。最後は自分で解けるよ。</div>
+    </div></div>
   );
 }
 
@@ -209,15 +239,16 @@ const S = {
   brand: { fontSize: 22, fontWeight: 900, color: "#a5b4fc" },
   meter: { fontSize: 11, color: "rgba(238,241,255,.6)" },
   mapBtn: { padding: "7px 12px", borderRadius: 10, border: "1px solid rgba(165,180,252,.5)", background: "rgba(99,102,241,.18)", color: "#c7d2fe", fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" },
+  chapCard: { width: "100%", display: "flex", alignItems: "center", gap: 12, textAlign: "left", padding: "14px 16px", borderRadius: 16, cursor: "pointer", color: "#fff", background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.15)", marginBottom: 10 },
   unit: { width: "100%", fontSize: 12, fontWeight: 800, color: "rgba(186,230,253,.9)", marginBottom: 6 },
   barTrackSlim: { width: "100%", height: 6, borderRadius: 999, background: "rgba(255,255,255,.1)", overflow: "hidden", marginBottom: 16 },
   barFillBlue: { height: "100%", borderRadius: 999, background: "linear-gradient(90deg,#818cf8,#22d3ee)" },
-  q: { fontSize: 34, fontWeight: 900, letterSpacing: 1, margin: "4px 0 18px", textAlign: "center", lineHeight: 1.3 },
+  q: { fontSize: 32, fontWeight: 900, letterSpacing: 1, margin: "4px 0 18px", textAlign: "center", lineHeight: 1.3 },
   help: { width: "100%", background: "rgba(251,191,36,.12)", border: "1px solid rgba(251,191,36,.4)", borderRadius: 12, padding: "10px 13px", marginBottom: 14 },
   helpTtl: { fontSize: 12, fontWeight: 900, color: "#fde047", marginBottom: 4 },
   helpLine: { fontSize: 13.5, color: "#fde68a", lineHeight: 1.8 },
   grid: { width: "100%", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
-  choice: { padding: "18px 10px", borderRadius: 14, border: "2px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontSize: 24, fontWeight: 900, cursor: "pointer" },
+  choice: { padding: "18px 10px", borderRadius: 14, border: "2px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontSize: 22, fontWeight: 900, cursor: "pointer" },
   ok: { background: "linear-gradient(135deg,#22c55e,#10b981)", border: "2px solid transparent" },
   ng: { background: "rgba(248,113,113,.25)", border: "2px solid rgba(248,113,113,.6)" },
   coach: { width: "100%", marginTop: 14, padding: "11px 13px", borderRadius: 12, background: "rgba(125,211,252,.14)", border: "1px solid rgba(125,211,252,.4)", color: "#bae6fd", fontSize: 13.5, fontWeight: 700, lineHeight: 1.6 },
