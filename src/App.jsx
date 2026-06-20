@@ -54,6 +54,10 @@ export default function App() {
   const [reviewing, setReviewing] = useState(false); // ふくしゅうモード中か
   const [chapterClear, setChapterClear] = useState(null); // 章クリアのご褒美演出 { name, emoji }
   const [fxKey, setFxKey] = useState(0); // 正解エフェクトの再生キー（増やすとアニメ再生）
+  const [radarChap, setRadarChap] = useState(null); // レーダー：null=学年の各章 / 章=その小単元
+
+  const unitMastery = (u) => ((solvedBy[u.id] || 0) >= u.need ? 1 : Math.min(1, mBy[u.id] || 0));
+  const chapMastery = (c) => c.units.reduce((s, u) => s + unitMastery(u), 0) / c.units.length;
 
   function resetTurn() { setPicked(null); setCoach(null); setPraise(null); setShowExplain(false); setShowVideo(false); }
   function loadNext(c, nextIdx, { soloStart = false } = {}) {
@@ -183,7 +187,10 @@ export default function App() {
       <div style={S.app}><div style={S.wrap}>
         <div style={S.top}>
           <button onClick={() => { setChap(null); setView("home"); }} style={S.mapBtn}>← 章えらび</button>
-          <button onClick={() => setView("map")} style={S.mapBtn}>📊 マップ</button>
+          <span style={{ display: "flex", gap: 7 }}>
+            <button onClick={() => { setRadarChap(chap); setView("radar"); }} style={S.mapBtn}>📡 レーダー</button>
+            <button onClick={() => setView("map")} style={S.mapBtn}>📊</button>
+          </span>
         </div>
         <div style={{ fontSize: 18, fontWeight: 900, margin: "6px 0 2px" }}>中{chap.grade}　{chap.emoji} {chap.name}</div>
         <div style={{ fontSize: 12, color: "rgba(238,241,255,.6)", marginBottom: 14 }}>{clearedN}/{chap.units.length} 単元クリア ・ 小単元をえらんで練習しよう</div>
@@ -210,6 +217,59 @@ export default function App() {
     );
   }
 
+  // ── 理解度レーダー（各章 or 各小単元を総合的に） ──
+  if (view === "radar") {
+    const items = radarChap
+      ? radarChap.units.map((u) => ({ emoji: u.emoji, label: u.name, value: unitMastery(u) }))
+      : CHAPTERS.filter((c) => c.grade === homeGrade).map((c) => ({ emoji: c.emoji, label: c.name, value: chapMastery(c) }));
+    const N = items.length, cx = 150, cy = 150, R = 92;
+    const pt = (v, i, r = R) => { const a = -Math.PI / 2 + i * 2 * Math.PI / N; return [cx + Math.cos(a) * r * v, cy + Math.sin(a) * r * v]; };
+    const ring = (f) => items.map((_, i) => pt(f, i).join(",")).join(" ");
+    const dataPts = items.map((it, i) => pt(Math.max(0.03, it.value), i).join(",")).join(" ");
+    const avg = Math.round(items.reduce((s, x) => s + x.value, 0) / Math.max(1, items.length) * 100);
+    const lvColor = (v) => (v >= 1 ? "#4ade80" : v >= 0.7 ? "#60a5fa" : v >= 0.35 ? "#fbbf24" : v > 0 ? "#f472b6" : "rgba(255,255,255,.4)");
+    return (
+      <div style={S.app}><div style={S.wrap}>
+        <div style={S.top}>
+          <button onClick={() => setView(radarChap ? "units" : "home")} style={S.mapBtn}>← もどる</button>
+          <button onClick={() => setView("map")} style={S.mapBtn}>📊 マップ</button>
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 900, margin: "4px 0 2px" }}>📡 理解度レーダー</div>
+        <div style={{ fontSize: 12, color: "rgba(238,241,255,.65)", marginBottom: 8 }}>
+          {radarChap ? `中${radarChap.grade} ${radarChap.emoji} ${radarChap.name}の小単元` : `中${homeGrade}の各章`} ・ 全体 <b style={{ color: lvColor(avg / 100) }}>{avg}%</b>
+        </div>
+        {!radarChap && (
+          <div style={{ display: "flex", gap: 8, width: "100%", marginBottom: 8 }}>
+            {GRADES.map((g) => (
+              <button key={g} onClick={() => { setHomeGrade(g); save("toketa_grade", g); }}
+                style={{ flex: 1, padding: "8px 0", borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 900,
+                  border: homeGrade === g ? "2px solid #818cf8" : "1px solid rgba(255,255,255,.18)",
+                  background: homeGrade === g ? "rgba(129,140,248,.25)" : "rgba(255,255,255,.05)", color: "#fff" }}>中{g}</button>
+            ))}
+          </div>
+        )}
+        <svg viewBox="0 0 300 300" style={{ width: "100%", maxWidth: 330, margin: "0 auto", display: "block" }}>
+          {[0.25, 0.5, 0.75, 1].map((f, i) => <polygon key={i} points={ring(f)} fill="none" stroke="rgba(255,255,255,.14)" strokeWidth="1" />)}
+          {items.map((_, i) => { const p = pt(1, i); return <line key={i} x1={cx} y1={cy} x2={p[0]} y2={p[1]} stroke="rgba(255,255,255,.1)" />; })}
+          <polygon points={dataPts} fill="rgba(129,140,248,.38)" stroke="#818cf8" strokeWidth="2.5" />
+          {items.map((it, i) => { const p = pt(Math.max(0.03, it.value), i); return <circle key={i} cx={p[0]} cy={p[1]} r="3.5" fill="#c7d2fe" />; })}
+          {items.map((it, i) => { const p = pt(1.16, i); return <text key={i} x={p[0]} y={p[1]} fontSize="17" textAnchor="middle" dominantBaseline="central">{it.emoji}</text>; })}
+        </svg>
+        <div style={{ width: "100%", marginTop: 6 }}>
+          {items.map((it, i) => (
+            <button key={i} onClick={() => { if (!radarChap) { const c = CHAPTERS.find((x) => x.name === it.label); if (c) { setChap(c); setRadarChap(c); } } }}
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 6px", background: "none", border: "none", borderBottom: "1px solid rgba(255,255,255,.08)", color: "#fff", cursor: radarChap ? "default" : "pointer", textAlign: "left" }}>
+              <span style={{ fontSize: 16 }}>{it.emoji}</span>
+              <span style={{ flex: 1, fontSize: 13, fontWeight: 700 }}>{it.label}</span>
+              <span style={{ fontSize: 12, fontWeight: 900, color: lvColor(it.value) }}>{Math.round(it.value * 100)}%</span>
+            </button>
+          ))}
+        </div>
+        <div style={S.note}>{radarChap ? "小単元ごとの理解度。へこんでいる所が「のびしろ」だよ。" : "各章を選ぶと、その小単元のレーダーが見られるよ。"}</div>
+      </div></div>
+    );
+  }
+
   // ── 章えらび（ホーム） ──
   if (view === "home" || !prob) {
     const medals = CHAPTERS.filter((c) => c.units.every((u) => (solvedBy[u.id] || 0) >= u.need)).length;
@@ -217,9 +277,10 @@ export default function App() {
       <div style={S.app}><div style={S.wrap}>
         <div style={S.top}>
           <span style={S.brand}>とけた！</span>
-          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={S.meter}>🏅{medals} ・ とけた数 {solved}ｺ</span>
-            <button onClick={() => setView("map")} style={S.mapBtn}>📊 マップ</button>
+          <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <span style={S.meter}>🏅{medals}</span>
+            <button onClick={() => { setRadarChap(null); setView("radar"); }} style={S.mapBtn}>📡</button>
+            <button onClick={() => setView("map")} style={S.mapBtn}>📊</button>
           </span>
         </div>
         <div style={{ fontSize: 14, fontWeight: 800, color: "rgba(238,241,255,.8)", margin: "8px 0 12px" }}>どの章を学ぶ？</div>
