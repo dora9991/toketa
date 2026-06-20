@@ -63,7 +63,20 @@ export default function App() {
     setReveal(soloStart ? 0 : revealForRung(startRung(mBy[unit.id] || 0), p.steps.length));
     resetTurn();
   }
-  function enterChapter(c) { setReviewing(false); loadNext(c, pickNextIdx(c, solvedBy)); setView("play"); }
+  function enterChapter(c) { setReviewing(false); setChap(c); setView("units"); }
+  function enterUnit(c, i) { setReviewing(false); loadNext(c, i); setView("play"); }
+  // 単元の理解度メーター（習熟度 mBy をもとに状態を出す）
+  function unitMeter(u) {
+    const done = (solvedBy[u.id] || 0) >= u.need;
+    const pct = done ? 100 : Math.round(Math.min(1, mBy[u.id] || 0) * 100);
+    let label, color;
+    if (done) { label = "バッチリ"; color = "#4ade80"; }
+    else if (pct >= 70) { label = "あと少し"; color = "#60a5fa"; }
+    else if (pct >= 35) { label = "練習中"; color = "#fbbf24"; }
+    else if ((solvedBy[u.id] || 0) > 0 || pct > 0) { label = "はじめたよ"; color = "#f472b6"; }
+    else { label = "これから"; color = "rgba(255,255,255,.35)"; }
+    return { done, pct, label, color };
+  }
 
   // ── ふくしゅう（これまで練習した単元から、章をまたいでまぜて出す） ──
   function reviewPool() { return CHAPTERS.flatMap((c) => c.units).filter((u) => (solvedBy[u.id] || 0) > 0); }
@@ -104,10 +117,12 @@ export default function App() {
       if (justCleared && chapDone) {
         setPraise(null);
         setChapterClear({ name: chap.name, emoji: chap.emoji }); // ご褒美演出（メダル）
+      } else if (justCleared) {
+        setPraise(`🎉 ${u.name} クリア！`);
+        setTimeout(() => setView("units"), 1400); // 単元クリア→小単元えらびに戻る
       } else {
-        setPraise(justCleared ? `🎉 ${u.name} クリア！つぎへ！` : (self ? "自力でとけた！すごい！" : "とけた！その調子！"));
-        const ni = pickNextIdx(chap, nSolvedBy);
-        setTimeout(() => loadNext(chap, ni), justCleared ? 1500 : 1050);
+        setPraise(self ? "自力でとけた！すごい！" : "とけた！その調子！");
+        setTimeout(() => loadNext(chap, idx), 1050); // 同じ小単元を続ける
       }
     } else {
       setCoach(cv.tag ? MISC[cv.tag]?.coach : "もう一度ためしてみよう");
@@ -157,6 +172,40 @@ export default function App() {
             <div style={S.mapCoach}>💡 {MISC[tag]?.coach}</div>
           </div>
         ))}
+      </div></div>
+    );
+  }
+
+  // ── 小単元えらび（理解度メーター付き） ──
+  if (view === "units" && chap) {
+    const clearedN = chap.units.filter((u) => (solvedBy[u.id] || 0) >= u.need).length;
+    return (
+      <div style={S.app}><div style={S.wrap}>
+        <div style={S.top}>
+          <button onClick={() => { setChap(null); setView("home"); }} style={S.mapBtn}>← 章えらび</button>
+          <button onClick={() => setView("map")} style={S.mapBtn}>📊 マップ</button>
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 900, margin: "6px 0 2px" }}>中{chap.grade}　{chap.emoji} {chap.name}</div>
+        <div style={{ fontSize: 12, color: "rgba(238,241,255,.6)", marginBottom: 14 }}>{clearedN}/{chap.units.length} 単元クリア ・ 小単元をえらんで練習しよう</div>
+        {chap.units.map((u, i) => {
+          const mt = unitMeter(u);
+          return (
+            <button key={u.id} onClick={() => enterUnit(chap, i)} style={S.unitRow}>
+              <span style={{ fontSize: 26, lineHeight: 1 }}>{u.emoji}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
+                  <span style={{ fontSize: 14.5, fontWeight: 900 }}>{u.name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 900, color: mt.color, whiteSpace: "nowrap" }}>{mt.done ? "バッチリ ✓" : `${mt.label} ${mt.pct}%`}</span>
+                </span>
+                <span style={{ display: "block", marginTop: 6, height: 8, borderRadius: 999, background: "rgba(255,255,255,.1)", overflow: "hidden" }}>
+                  <span style={{ display: "block", height: "100%", width: mt.pct + "%", background: mt.color, transition: "width .4s" }} />
+                </span>
+                <span style={{ fontSize: 10.5, color: "rgba(238,241,255,.5)", marginTop: 3, display: "block" }}>とけた {Math.min(solvedBy[u.id] || 0, u.need)}/{u.need}</span>
+              </span>
+              <span style={{ fontSize: 16, color: "rgba(255,255,255,.5)" }}>›</span>
+            </button>
+          );
+        })}
       </div></div>
     );
   }
@@ -229,7 +278,7 @@ export default function App() {
         </div>
       )}
       <div style={S.top}>
-        <button onClick={() => { setProb(null); setReviewing(false); setView("home"); }} style={S.mapBtn}>← もどる</button>
+        <button onClick={() => { if (reviewing) { setProb(null); setReviewing(false); setView("home"); } else setView("units"); }} style={S.mapBtn}>← もどる</button>
         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={S.meter}>とけた数 {solved}ｺ</span>
           <button onClick={() => setView("map")} style={S.mapBtn}>📊 マップ</button>
@@ -330,6 +379,7 @@ const S = {
   meter: { fontSize: 11, color: "rgba(238,241,255,.6)" },
   mapBtn: { padding: "7px 12px", borderRadius: 10, border: "1px solid rgba(165,180,252,.5)", background: "rgba(99,102,241,.18)", color: "#c7d2fe", fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" },
   chapCard: { width: "100%", display: "flex", alignItems: "center", gap: 12, textAlign: "left", padding: "14px 16px", borderRadius: 16, cursor: "pointer", color: "#fff", background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.15)", marginBottom: 10 },
+  unitRow: { width: "100%", display: "flex", alignItems: "center", gap: 12, textAlign: "left", padding: "12px 14px", borderRadius: 14, cursor: "pointer", color: "#fff", background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.13)", marginBottom: 9 },
   unit: { width: "100%", fontSize: 12, fontWeight: 800, color: "rgba(186,230,253,.9)", marginBottom: 6 },
   barTrackSlim: { width: "100%", height: 6, borderRadius: 999, background: "rgba(255,255,255,.1)", overflow: "hidden", marginBottom: 16 },
   barFillBlue: { height: "100%", borderRadius: 999, background: "linear-gradient(90deg,#818cf8,#22d3ee)" },
