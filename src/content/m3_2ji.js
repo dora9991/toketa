@@ -38,10 +38,23 @@ function genFactorNeg() {
     steps: [`（x−${a}）（x＋${b}）＝ 0`, `x ＝ ${a} または ${num(-b)}。正の解は ${a}`],
     distractors: opts(ans, [{ val: -a, tag: "factor-sign" }, { val: b, tag: "calc" }]) };
 }
+function genUse() {
+  if (Math.random() < 0.5) {
+    const x = ri(3, 9), d = ri(1, 5), area = x * (x + d);
+    return { q: `縦が横より ${d} 長い長方形の面積が ${area}。横の長さは？`, ans: x,
+      steps: [`横を x とすると x（x＋${d}）＝ ${area}`, `（x−${x}）（x＋${x + d}）＝ 0`, `正の解 x ＝ ${x}`],
+      distractors: opts(x, [{ val: x + d, tag: "factor-sign" }, { val: -(x + d), tag: "factor-sign" }]) };
+  }
+  const n = ri(3, 9), prod = n * (n + 1);
+  return { q: `連続する2つの整数の積が ${prod}。小さい方の整数は？`, ans: n,
+    steps: [`小さい方を x とすると x（x＋1）＝ ${prod}`, `（x−${n}）（x＋${n + 1}）＝ 0`, `正の解 x ＝ ${n}`],
+    distractors: opts(n, [{ val: n + 1, tag: "factor-sign" }, { val: -(n + 1), tag: "factor-sign" }]) };
+}
 export const CHAPTER_M3_2JI = { id: "m3-2ji", name: "2次方程式", emoji: "⚖️", grade: 3, units: [
   { id: "m32-x2", name: "x² ＝ a で解く", emoji: "🟰", haichiUnit: "g3c3u1", need: 5, gen: genX2 },
   { id: "m32-sq", name: "（x−a）² ＝ b で解く", emoji: "🟧", haichiUnit: "g3c3u2", need: 5, gen: genSquareEq },
   { id: "m32-fac", name: "因数分解で解く", emoji: "🧩", haichiUnit: "g3c3u4", need: 5, gen: genFactor },
   { id: "m32-fac0", name: "x²−bx＝0 で解く", emoji: "0️⃣", haichiUnit: "g3c3u4", need: 5, gen: genFactor0 },
   { id: "m32-facn", name: "因数分解（正負の解）", emoji: "🔀", haichiUnit: "g3c3u4", need: 5, gen: genFactorNeg },
+  { id: "m32-use", name: "利用（面積・整数）", emoji: "📝", haichiUnit: "g3c3u5", need: 5, gen: genUse },
 ] };

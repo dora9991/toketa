@@ -54,6 +54,20 @@ function genParen() {
     distractors: opts(x, [{ val: Math.round((c - b) / a), tag: "dist-miss" }, { val: Math.round(c / a), tag: "dist-miss" }]) };
 }
 
+// 5'. 文章題（ある数・代金）
+function genWord() {
+  if (Math.random() < 0.5) {
+    const x = ri(2, 12), a = ri(2, 5), b = ri(1, 9), c = a * x + b;
+    return { q: `ある数を ${a}倍して ${b} をたすと ${c} になった。ある数は？`, ans: x,
+      steps: [`ある数を x とすると ${a}x ＋ ${b} ＝ ${c}`, `${a}x ＝ ${c - b} → x ＝ ${x}`],
+      distractors: opts(x, [{ val: Math.round((c + b) / a), tag: "move-sign" }, { val: c - b, tag: "div-both" }]) };
+  }
+  const price = ri(80, 200), n = ri(3, 8), box = ri(50, 150), total = price * n + box;
+  return { q: `1個 ${price}円のおかしを何個かと、${box}円の箱を買って ${total}円。おかしは何個？`, ans: n,
+    steps: [`個数を x とすると ${price}x ＋ ${box} ＝ ${total}`, `${price}x ＝ ${total - box} → x ＝ ${n}`],
+    distractors: opts(n, [{ val: Math.round(total / price), tag: "move-sign" }, { val: n + 1, tag: "div-both" }]) };
+}
+
 export const CHAPTER_EQ = {
   id: "houteishiki", name: "方程式", emoji: "⚖️",
   units: [
@@ -62,5 +76,6 @@ export const CHAPTER_EQ = {
     { id: "eq-two", name: "2ステップで解く", emoji: "🪜", haichiUnit: "e2", need: 5, gen: genTwo },
     { id: "eq-move", name: "移項（両辺に文字）", emoji: "↔️", haichiUnit: "e3", need: 5, gen: genMove },
     { id: "eq-paren", name: "かっこのある式", emoji: "📦", haichiUnit: "e2", need: 6, gen: genParen },
+    { id: "eq-word", name: "文章題（ある数・代金）", emoji: "📝", haichiUnit: "e5", need: 5, gen: genWord },
   ],
 };

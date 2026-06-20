@@ -134,6 +134,18 @@ function genShisoku() {
 }
 
 // 章（小単元を学習順に）。need = 自力で何問とけたらクリア（次の単元へ）。
+// ── 6. 文章題（気温の増減） ──
+function genWord() {
+  const a = ri(-5, 5), d = ri(2, 9), up = Math.random() < 0.5, ans = up ? a + d : a - d;
+  const sa = a < 0 ? `−${-a}` : `${a}`;
+  return {
+    q: `朝の気温は ${sa}℃。昼までに ${d}℃ ${up ? "上がった" : "下がった"}。昼の気温は？`,
+    ans,
+    steps: [`${sa} ${up ? "＋" : "−"} ${d} を計算する`, `＝ ${ans}（℃）`],
+    distractors: four(ans, [{ val: up ? a - d : a + d, tag: "sign-flip" }, { val: -ans, tag: "abs-sign" }]),
+  };
+}
+
 export const CHAPTER = {
   id: "seisu",
   name: "正の数・負の数",
@@ -144,5 +156,6 @@ export const CHAPTER = {
     { id: "genpou", name: "減法（ひき算）", emoji: "➖", haichiUnit: "u3", need: 5, gen: genGenpou },
     { id: "jokujo", name: "乗法・除法", emoji: "✖️", haichiUnit: "u4", need: 5, gen: genJokujo },
     { id: "shisoku", name: "四則混合", emoji: "🔀", haichiUnit: "u5", need: 6, gen: genShisoku },
+    { id: "seisu-word", name: "文章題（気温）", emoji: "🌡️", haichiUnit: "u1", need: 5, gen: genWord },
   ],
 };

@@ -35,9 +35,11 @@ export default function App() {
   const [showExplain, setShowExplain] = useState(false);
   const [showVideo, setShowVideo] = useState(false);
   const [stumbles, setStumbles] = useState(() => load("toketa_stumbles", {}));
+  const [wrongBy, setWrongBy] = useState(() => load("toketa_wrongBy", {})); // 単元別の間違えた回数（復習の重み付けに使う）
   const [view, setView] = useState("home");
   const [homeGrade, setHomeGrade] = useState(() => load("toketa_grade", 1));
   const [reviewing, setReviewing] = useState(false); // ふくしゅうモード中か
+  const [chapterClear, setChapterClear] = useState(null); // 章クリアのご褒美演出 { name, emoji }
 
   function resetTurn() { setPicked(null); setCoach(null); setPraise(null); setShowExplain(false); setShowVideo(false); }
   function loadNext(c, nextIdx, { soloStart = false } = {}) {
@@ -54,7 +56,10 @@ export default function App() {
   function loadReviewNext() {
     const pool = reviewPool();
     if (pool.length === 0) { setView("home"); return; }
-    const unit = pool[Math.floor(Math.random() * pool.length)];
+    // 間違えた回数が多い／習熟度が低い単元ほど出やすい重み付け
+    const weight = (u) => 1 + 3 * (wrongBy[u.id] || 0) + 2 * (1 - (mBy[u.id] || 0));
+    let r = Math.random() * pool.reduce((s, u) => s + weight(u), 0), unit = pool[pool.length - 1];
+    for (const u of pool) { r -= weight(u); if (r <= 0) { unit = u; break; } }
     const p = { ...unit.gen(), unit };
     setProb(p);
     setReveal(revealForRung(startRung(mBy[unit.id] || 0), p.steps.length));
@@ -82,8 +87,8 @@ export default function App() {
       const justCleared = prev < u.need && prev + 1 >= u.need;
       const chapDone = chap.units.every((x) => (nSolvedBy[x.id] || 0) >= x.need);
       if (justCleared && chapDone) {
-        setPraise(`🎉 ${chap.name} ぜんぶクリア！すごい！`);
-        setTimeout(() => { setProb(null); setView("home"); }, 1800);
+        setPraise(null);
+        setChapterClear({ name: chap.name, emoji: chap.emoji }); // ご褒美演出（メダル）
       } else {
         setPraise(justCleared ? `🎉 ${u.name} クリア！つぎへ！` : (self ? "自力でとけた！すごい！" : "とけた！その調子！"));
         const ni = pickNextIdx(chap, nSolvedBy);
@@ -92,9 +97,24 @@ export default function App() {
     } else {
       setCoach(cv.tag ? MISC[cv.tag]?.coach : "もう一度ためしてみよう");
       if (cv.tag) setStumbles((s) => { const v = { ...s, [cv.tag]: (s[cv.tag] || 0) + 1 }; save("toketa_stumbles", v); return v; });
+      setWrongBy((w) => { const v = { ...w, [u.id]: (w[u.id] || 0) + 1 }; save("toketa_wrongBy", v); return v; });
       setReveal((v) => Math.min(prob.steps.length, v + 1));
       setTimeout(() => setPicked(null), 650);
     }
+  }
+
+  // ── 章クリアのご褒美（メダル演出） ──
+  if (chapterClear) {
+    return (
+      <div style={S.app}><div style={{ ...S.wrap, justifyContent: "center", minHeight: "100dvh", textAlign: "center" }}>
+        <div style={{ fontSize: 13, fontWeight: 900, color: "#fde047", letterSpacing: 3 }}>🏅 しょう クリア！</div>
+        <div style={{ fontSize: 84, margin: "14px 0" }}>{chapterClear.emoji}</div>
+        <div style={{ fontSize: 24, fontWeight: 900, color: "#fff" }}>{chapterClear.name}</div>
+        <div style={{ fontSize: 15, fontWeight: 900, color: "#a5f3fc", marginTop: 6 }}>ぜんぶクリア！メダル GET！🏅</div>
+        <div style={{ fontSize: 13, color: "rgba(238,241,255,.7)", marginTop: 12, lineHeight: 1.7 }}>よくがんばったね！<br />つぎの章や、ふくしゅうにも挑戦しよう。</div>
+        <button onClick={() => { setChapterClear(null); setProb(null); setReviewing(false); setView("home"); }} style={{ ...S.tryBtn, marginTop: 24, maxWidth: 300 }}>🏠 ホームへ</button>
+      </div></div>
+    );
   }
 
   // ── つまづきマップ ──
@@ -128,12 +148,13 @@ export default function App() {
 
   // ── 章えらび（ホーム） ──
   if (view === "home" || !prob) {
+    const medals = CHAPTERS.filter((c) => c.units.every((u) => (solvedBy[u.id] || 0) >= u.need)).length;
     return (
       <div style={S.app}><div style={S.wrap}>
         <div style={S.top}>
           <span style={S.brand}>とけた！</span>
           <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={S.meter}>とけた数 {solved}ｺ</span>
+            <span style={S.meter}>🏅{medals} ・ とけた数 {solved}ｺ</span>
             <button onClick={() => setView("map")} style={S.mapBtn}>📊 マップ</button>
           </span>
         </div>
@@ -153,7 +174,7 @@ export default function App() {
             <button key={c.id} onClick={() => enterChapter(c)} style={{ ...S.chapCard, borderColor: done ? "rgba(74,222,128,.6)" : "rgba(255,255,255,.15)" }}>
               <span style={{ fontSize: 32, lineHeight: 1 }}>{c.emoji}</span>
               <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 16, fontWeight: 900, display: "block" }}>{c.name}</span>
+                <span style={{ fontSize: 16, fontWeight: 900, display: "block" }}>{done ? "🏅 " : ""}{c.name}</span>
                 <span style={{ fontSize: 12, color: done ? "#86efac" : "rgba(238,241,255,.6)" }}>{cleared}/{c.units.length} 単元{done ? " クリア ✓" : ""}</span>
                 <span style={{ display: "block", marginTop: 6, height: 6, borderRadius: 999, background: "rgba(255,255,255,.1)", overflow: "hidden" }}>
                   <span style={{ display: "block", height: "100%", width: `${Math.round(cleared / c.units.length * 100)}%`, background: "linear-gradient(90deg,#818cf8,#22d3ee)" }} />
